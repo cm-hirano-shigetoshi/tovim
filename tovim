@@ -1,0 +1,59 @@
+#!/usr/bin/env python
+import os
+import re
+import sys
+import subprocess
+from subprocess import PIPE
+
+
+def normal_open(paths):
+    subprocess.run('vim {}'.format(' '.join(paths)), shell=True, text=True)
+
+
+def tovim_open(paths, target):
+    ar_cmd = 'tmux send-keys -t{} ":ar {}" C-m'.format(
+        target, ' '.join(paths))
+    select_cmd = 'tmux select-pane -t{}'.format(target)
+    subprocess.run('{}; {}'.format(ar_cmd, select_cmd), shell=True, text=True)
+
+
+def get_pane_ids():
+    proc = subprocess.run('tmux list-panes -F "#{pane_pid}#{pane_id}"',
+                          shell=True,
+                          stdout=PIPE,
+                          text=True)
+    return proc.stdout[:-1].split('\n')
+
+
+def is_vim_process(id):
+    pid = id[:id.find('%')]
+    proc = subprocess.run('pstree {}'.format(pid),
+                          shell=True,
+                          stdout=PIPE,
+                          text=True)
+    for line in proc.stdout[:-1].split('\n'):
+        match = re.search(r'--vim$', line)
+        if match is not None:
+            return True
+        match = re.search(r'\d+ \S+ vim( |$)', line)
+        if match is not None:
+            return True
+    return False
+
+
+def get_target_pid(id):
+    return id[id.find('%'):]
+
+
+if 'TMUX' not in os.environ or os.environ['TMUX'] == '':
+    normal_open(sys.argv[1:])
+else:
+    target = None
+    for id in get_pane_ids():
+        if is_vim_process(id):
+            target = get_target_pid(id)
+            break
+    if target is not None:
+        tovim_open(sys.argv[1:], target)
+    else:
+        normal_open(sys.argv[1:])
